@@ -280,7 +280,7 @@
 (function(){
 'use strict';
 /* ============================================================
-   赛车游戏：上海午夜外卖 · 电瓶车竞速送餐
+   赛车游戏：午夜外卖 · 电瓶车竞速送餐
    three.js r128 (本地自托管) + 自研电影级后期
    ============================================================ */
 if(!window.THREE){ document.getElementById('load').innerHTML='<div>three.js 加载失败，请检查网络后重试</div>'; return; }
@@ -314,10 +314,10 @@ const ROUTES={
   near:{icon:'⚡', name:'近路·穿弄堂', dist:0.7,  dens:1.7,  time:0.85, desc:'距离×0.7 · 障碍×1.7 · 时限紧'},
   far: {icon:'🛣️', name:'远路·走大路', dist:1.35, dens:0.55, time:1.25, desc:'距离×1.35 · 障碍×0.55 · 时限宽松'}
 };
-/* 难度曲线：1-2单新手(障碍×0.6)，3-8单递增到×1.4，之后保持 */
-function diffMult(n){ if(n<=2) return 0.6; if(n>=8) return 1.4; return 0.6+(n-2)*(0.8/6); }
-/* 时限曲线：1-2单+30%，8单后标准 */
-function timeMult(n){ if(n<=2) return 1.3; if(n>=8) return 1.0; return 1.3-(n-2)*(0.3/6); }
+/* 难度曲线（2026-10-03 用户要求降低）：1-2单新手(障碍×0.4)，3-8单递增到×1.0，之后保持 */
+function diffMult(n){ if(n<=2) return 0.4; if(n>=8) return 1.0; return 0.4+(n-2)*(0.6/6); }
+/* 时限曲线：1-2单+50%，8单后+15% */
+function timeMult(n){ if(n<=2) return 1.5; if(n>=8) return 1.15; return 1.5-(n-2)*(0.35/6); }
 function updateDens(){ G.dens=diffMult(G.order)*(ROUTES[G.route]?ROUTES[G.route].dens:1); }
 function applyRouteTime(){ G.timeLeft=(G.plan.time+25)*timeMult(G.order)*ROUTES[G.route].time; }
 function updateOrderLabel(){
@@ -325,7 +325,66 @@ function updateOrderLabel(){
   const legTxt=G.leg==='pickup' ? '🛍去取餐·'+G.shop.name : '🛵去送餐·'+G.cust.name;
   ui.orderLabel.textContent='订单 #'+G.order+' '+r.icon+' · '+legTxt;
 }
-/* 路线选择卡片：每段行程开始时弹2张，5秒不选自动近路 */
+/* 路线岔路（2026-10-03 用户要求）：物理选择替代弹窗卡片。
+   主视角前方出现岔路（分流岛+左右路牌），玩家骑进左边或右边来选择路线。
+   左=⚡近路·穿弄堂，右=🛣️远路·走大路 */
+let forkGroup=null;
+function makeForkSign(line1,line2,bg){
+  const c=document.createElement('canvas'); c.width=512; c.height=256;
+  const g=c.getContext('2d');
+  g.fillStyle=bg; g.fillRect(0,0,512,256);
+  g.strokeStyle='#fff'; g.lineWidth=10; g.strokeRect(10,10,492,236);
+  g.fillStyle='#fff'; g.textAlign='center'; g.textBaseline='middle';
+  g.font='bold 64px sans-serif'; g.fillText(line1,256,88);
+  g.font='bold 56px sans-serif'; g.fillText(line2,256,180);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex(c),toneMapped:false,depthTest:false}));
+  sp.scale.set(13,6.5,1); sp.renderOrder=5;
+  return sp;
+}
+function clearRouteFork(){
+  if(forkGroup){ scene.remove(forkGroup); forkGroup=null; }
+  G.fork=null;
+}
+function placeRouteFork(legName){
+  clearRouteFork();
+  const fs=player.s+75;
+  G.fork={s:fs, leg:legName, decided:false};
+  forkGroup=new THREE.Group();
+  const f=PF(fs, PATH.res2);
+  const px=f.x, pz=f.z, nx=f.nx, nz=f.nz;
+  // 中央分流岛：6个锥桶一字排开
+  for(let i=-2;i<=3;i++){
+    const cs=fs+i*4;
+    const cf=PF(cs, PATH.res2);
+    const cone=M(GEO.cone, MAT.beaconOrange, cf.x, 0.8, cf.z, 1.2,2.2,1.2);
+    forkGroup.add(cone);
+  }
+  // 左右路牌（Sprite 永远朝相机）
+  const lSign=makeForkSign('◀ ⚡近路','穿弄堂','#b8860b');
+  lSign.position.set(px-nx*7.5, 6.5, pz-nz*7.5);
+  const rSign=makeForkSign('远路 🛣️▶','走大路','#1a7a4a');
+  rSign.position.set(px+nx*7.5, 6.5, pz+nz*7.5);
+  forkGroup.add(lSign,rSign);
+  scene.add(forkGroup);
+  setBanner('🗺️ 前方岔路：◀左=⚡近路 ｜ 右=🛣️远路▶','banner-dwell');
+  popup('前方岔路口！骑进左边走近路，右边走远路','info',3500);
+}
+function checkRouteFork(){
+  if(!G.fork||G.fork.decided) return;
+  if(player.s>=G.fork.s){
+    G.fork.decided=true;
+    const key=player.x<-1.5?'near':(player.x>1.5?'far':'near');
+    const leg=G.fork.leg;
+    clearRouteFork(); hideBanner();
+    popup((key==='near'?'⚡ 已走近路·穿弄堂':'🛣️ 已走远路·走大路'),'info',1600);
+    if(leg==='pickup') applyPickupRoute(key); else applyDeliverRoute(key);
+  }else if(G.fork&&player.s>G.fork.s-60){
+    // 接近岔路时保持提示
+    if(ui.banner.classList.contains('hidden'))
+      setBanner('🗺️ 前方岔路：◀左=⚡近路 ｜ 右=🛣️远路▶','banner-dwell');
+  }
+}
+/* 旧弹窗卡片已废弃（2026-10-03 改为物理岔路），保留函数体以防万一 */
 function showRouteCards(legName,onPick){
   const old=document.getElementById('routecards'); if(old) old.remove();
   const ov=document.createElement('div'); ov.id='routecards';
@@ -1153,7 +1212,7 @@ function M(geo,mat,x,y,z,sx,sy,sz,rx,ry,rz){
 }
 
 /* ============================================================
-   世界：夜上海街道（块状循环）
+   世界：午夜城市街道（块状循环）
    ============================================================ */
 buildMats();
 const LIGHT={ state:'green', t:0, heads:[], pedHeads:[] };
@@ -1246,11 +1305,11 @@ function buildBillboard(b,side,zc,seedR){
   const tp=pick(SIGN_TEXTS);
   const x=side*(26+seedR()*2), y=R(14,26);
   g.add(M(GEO.box,MAT.billFrame,x,y,zc,0.5,4.4,9.4));
-  const s=M(GEO.plane,signMat(tp[0]+' '+pick(['旗舰店','24小时','·上海','老字号']),tp[1],false),
+  const s=M(GEO.plane,signMat(tp[0]+' '+pick(['旗舰店','24小时','老字号','连锁']),tp[1],false),
             x+(-side)*0.35,y,zc,8.4,3.8,1,0,-Math.PI/2*side,0);
   g.add(s);
 }
-/* ---- 上海特色：高架龙门指路牌 ---- */
+/* ---- 高架龙门指路牌 ---- */
 const GANTRY_PAIRS=[['外滩 The Bund','虹桥枢纽 Hongqiao'],['陆家嘴 Lujiazui','南京东路 Nanjing Rd'],
  ['延安西路 Yan\'an Rd','新天地 Xintiandi'],['静安寺 Jing\'ansi','淮海中路 Huaihai Rd'],
  ['五角场 Wujiaochang','徐家汇 Xujiahui'],['人民广场 People Sq','世纪大道 Century Ave']];
@@ -1318,7 +1377,7 @@ function buildStreetPlates(b,zc){
     g.add(M(GEO.plane,plateMat(street),px,3.35,zc+3.2,4.8,0.9,1,0,Math.PI/2,0));
   }
 }
-/* ---- 蓝底白字路名牌（仿上海路牌）：块内跨过 road/road 街名变更边界时在分界处 +x 路侧立牌 ---- */
+/* ---- 蓝底白字路名牌：块内跨过 road/road 街名变更边界时在分界处 +x 路侧立牌 ---- */
 const streetPlateCache={};
 function streetPlateMat(name){
   if(streetPlateCache[name]) return streetPlateCache[name];
@@ -1345,7 +1404,7 @@ function streetNamePlates(b,W,seedR){
   }
 }
 function buildBridge(b,seedR){
-  // 高架桥横跨道路（上海高架）
+  // 高架桥横跨道路
   const g=b.group;
   const deckY=8.4;
   g.add(M(GEO.box,MAT.bridge,0,deckY,0,52,1.4,7));           // 桥面
@@ -1371,7 +1430,7 @@ function buildBridge(b,seedR){
   }
 }
 function buildPearl(b,side,zc){
-  // 外滩-ish 明珠塔剪影点缀
+  // 电视塔剪影点缀
   const g=b.group;
   const x=side*46;
   const pink=new THREE.MeshBasicMaterial({color:0xff7ab0}); pink.toneMapped=false;
@@ -2409,7 +2468,7 @@ function startClerkServe(){
       placeDest(); refreshDestBlock();
       G.route='near'; updateDens(); applyRouteTime();
       updateOrderLabel();
-      showRouteCards('deliver', applyDeliverRoute);
+      placeRouteFork('deliver');
     });
   }, true);
 }
@@ -2575,6 +2634,30 @@ function popup(text,cls,dur){
   ui.popups.appendChild(d);
   setTimeout(()=>d.remove(),dur||1300);
 }
+/* 中央横幅：cls 可为 'banner-dwell'（等餐/等客）或 'banner-warn'（减速警告），空则默认 */
+function setBanner(text,cls){
+  ui.banner.textContent=text||'';
+  ui.banner.classList.remove('banner-dwell','banner-warn');
+  if(cls) ui.banner.classList.add(cls);
+  ui.banner.classList.toggle('hidden',!text);
+}
+function hideBanner(){
+  ui.banner.classList.add('hidden');
+  ui.banner.classList.remove('banner-dwell','banner-warn');
+}
+/* 注入横幅样式（等餐/警告更显眼） */
+(function(){
+  const st=document.createElement('style');
+  st.textContent='#banner.banner-dwell{font-size:72px!important;color:#ffe45e!important;'
+    +'text-shadow:0 0 50px rgba(255,210,87,.8),0 4px 0 rgba(0,0,0,.5)!important;'
+    +'background:rgba(20,16,4,.72);border-top:4px solid #ffd257;border-bottom:4px solid #ffd257;padding:14px 0;}'
+    +'#banner.banner-warn{font-size:64px!important;color:#ff5a4e!important;'
+    +'text-shadow:0 0 40px rgba(255,60,40,.8)!important;background:rgba(40,8,4,.72);'
+    +'border-top:4px solid #ff5a4e;border-bottom:4px solid #ff5a4e;padding:12px 0;'
+    +'animation:bannerFlash .7s ease-in-out infinite;}'
+    +'@keyframes bannerFlash{0%,100%{opacity:1;}50%{opacity:.55;}}';
+  document.head.appendChild(st);
+})();
 
 /* ============================================================
    输入
@@ -2631,7 +2714,7 @@ function startGame(){
   // 重置玩家位置
   player.x=8; player.s=0; player.vx=0; player.speed=0; player.prevS=0; player.lean=0;
   G.score=0; G.near=0; G.orders=0; G.crashes=0; G.navTurn=null; G.navText=null;
-  G.lastCross=null; G.dwellT=0; G.serve=null; clearNPCs();
+  G.lastCross=null; G.dwellT=0; G.serve=null; clearNPCs(); clearRouteFork();
   dest.group.visible=false; // 送餐信标等取餐后才出现
   startOrder(1); // 两段式订单：先去店里取餐
   scatterObstacles();
@@ -2686,7 +2769,7 @@ function startOrder(n){
   popup('新订单：去'+shop.name+'取餐','info');
   if(n<=2) setTimeout(()=>{ if(G.state==='race'&&G.order===n&&G.leg==='pickup') popup('💡 新手提示：跟着黄色箭头走，红灯停','info',2300); },2600);
   G.invuln=1.5;
-  showRouteCards('pickup', applyPickupRoute);
+  placeRouteFork('pickup');
 }
 /* 送达结算（替代旧 nextOrder） */
 function deliverDone(){
@@ -2776,7 +2859,8 @@ function checkCollisions(dt){
       const ds=c.s-ps, dx=Math.abs(c.lx-px);
       if(Math.abs(ds)<hl&&dx<hw){
         if(c.dir>0){ doCrash('car',5,4); popup('追尾了！-5秒','bad'); }
-        else { fatalCrash('逆行相撞！车辆报废'); }
+        else if(player.speed>12){ fatalCrash('逆行相撞！车辆报废'); }
+        else { doCrash('car',8,3); popup('逆行剐蹭！-8秒','bad'); }
         break;
       }
       // 惊险超车判定
@@ -2834,7 +2918,8 @@ function checkCollisions(dt){
       if(!e.active) continue;
       const dx=Math.abs(e.lx-px), ds=Math.abs(e.s-ps);
       if(dx<1.4&&ds<2.0){
-        if(e.dir<0){ fatalCrash('撞上逆行电瓶车！'); }
+        if(e.dir<0&&player.speed>12){ fatalCrash('撞上逆行电瓶车！'); }
+        else if(e.dir<0){ doCrash('ebike',5,2); popup('撞上逆行电瓶车！-5秒','bad'); }
         else { doCrash('ebike',3,2); popup('撞上电瓶车！-3秒','bad'); }
         break;
       }
@@ -2892,20 +2977,18 @@ function checkCollisions(dt){
         G.dwellT+=dt;
         const k=clamp(G.dwellT/3,0,1), f=Math.round(k*8);
         const left=Math.max(1,Math.ceil(3-G.dwellT));
-        ui.banner.textContent='🧍 店员取餐中… '+'█'.repeat(f)+'░'.repeat(8-f)+' '+left+'s';
-        ui.banner.classList.remove('hidden');
+        setBanner('🧍 店员取餐中… '+'█'.repeat(f)+'░'.repeat(8-f)+' '+left+'s','banner-dwell');
         if(G.dwellT>=3){
-          ui.banner.classList.add('hidden');
+          hideBanner();
           startClerkServe();
         }
       }else{
         if(G.dwellT>0) G.dwellT=0;
         // 40 米内还没停稳：提示减速
         if(pds<12&&pds>-40&&player.speed>=2.5){
-          ui.banner.textContent='🛑 前方取餐点，减速停稳';
-          ui.banner.classList.remove('hidden');
+          setBanner('🛑 前方取餐点，减速停稳','banner-warn');
         }else{
-          ui.banner.classList.add('hidden');
+          hideBanner();
         }
         if(pds>25){ // 错过取餐点：-5 秒，同一家店往前重放
           G.timeLeft=Math.max(0,G.timeLeft-5);
@@ -2931,20 +3014,18 @@ function checkCollisions(dt){
         G.dwellT+=dt;
         const k=clamp(G.dwellT/3,0,1), f=Math.round(k*8);
         const left=Math.max(1,Math.ceil(3-G.dwellT));
-        ui.banner.textContent='🚶 客户下楼中… '+'█'.repeat(f)+'░'.repeat(8-f)+' '+left+'s';
-        ui.banner.classList.remove('hidden');
+        setBanner('🚶 客户下楼中… '+'█'.repeat(f)+'░'.repeat(8-f)+' '+left+'s','banner-dwell');
         if(G.dwellT>=3){
-          ui.banner.classList.add('hidden');
+          hideBanner();
           startCustServe();
         }
       }else{
         if(G.dwellT>0) G.dwellT=0;
         // 40 米内还没停稳：提示减速
         if(dds<12&&dds>-40&&player.speed>=2.5){
-          ui.banner.textContent='🛑 前方客户家，减速停稳';
-          ui.banner.classList.remove('hidden');
+          setBanner('🛑 前方客户家，减速停稳','banner-warn');
         }else{
-          ui.banner.classList.add('hidden');
+          hideBanner();
         }
         if(dds>=28){ // 错过门口
           G.timeLeft=Math.max(0,G.timeLeft-5); popup('错过收货门！-5秒','bad');
@@ -3124,7 +3205,7 @@ function updatePlayer(dt){
   const xMin=zone==='alley'?-1.8:-12.4, xMax=zone==='alley'?1.8:12.4; // 马路区可骑上人行道
   p.x=clamp(p.x+p.vx*dt, xMin, xMax);
   const atEdge=(p.x<=xMin+0.01&&p.vx<0)||(p.x>=xMax-0.01&&p.vx>0);
-  if(atEdge&&p.speed>9){ fatalCrash('撞墙了！车散架了'); return; }
+  if(atEdge&&p.speed>14){ fatalCrash('撞墙了！车散架了'); return; }
   if(atEdge){
     p.vx*=0.4; p.speed=Math.min(p.speed,13);
     const now=performance.now();
@@ -3422,6 +3503,7 @@ function frame(){
       updateCars(dt,tf); updatePeds(dt,pf); updateEbikes(dt);
       recycleObstacles(); updateDebris(dt); updatePickups(dt);
       checkCollisions(dt);
+      checkRouteFork();
       updateNPCs(dt);
       G.timeLeft-=dt;
       if(G.timeLeft<=0){ G.timeLeft=0; gameOver(false); }
