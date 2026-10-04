@@ -2835,7 +2835,7 @@ document.addEventListener('visibilitychange',()=>{ if(document.hidden&&G.state==
    ============================================================ */
 function doCrash(kind,lose,slowTo){
   G.crashes++;
-  G.timeLeft=Math.max(0,G.timeLeft-lose);
+  G.score=Math.max(0,G.score-lose*10);
   player.speed=Math.min(player.speed,slowTo);
   player.vx*=-0.4;
   G.invuln=1.4; G.hitFlash=1; G.shake=Math.min(G.shake+0.9,1.4);
@@ -2858,9 +2858,9 @@ function checkCollisions(dt){
       const hl=c.group.userData.halfLen+1.15, hw=c.group.userData.halfW+0.5;
       const ds=c.s-ps, dx=Math.abs(c.lx-px);
       if(Math.abs(ds)<hl&&dx<hw){
-        if(c.dir>0){ doCrash('car',5,4); popup('追尾了！-5秒','bad'); }
+        if(c.dir>0){ doCrash('car',5,4); popup('追尾了！-50分','bad'); }
         else if(player.speed>12){ fatalCrash('逆行相撞！车辆报废'); }
-        else { doCrash('car',8,3); popup('逆行剐蹭！-8秒','bad'); }
+        else { doCrash('car',8,3); popup('逆行剐蹭！-80分','bad'); }
         break;
       }
       // 惊险超车判定
@@ -2882,10 +2882,10 @@ function checkCollisions(dt){
       // 行人弹飞动画（小喜剧）
       p.vx=(p.x>px?1:-1)*R(3,5); p.vy=R(4,6); p.vs=R(-3,3);
       p.life=1.6;
-      G.timeLeft=Math.max(0,G.timeLeft-3);
+      G.score=Math.max(0,G.score-30);
       player.speed=Math.max(6,player.speed*0.55);
       G.hitFlash=0.8; G.shake=Math.min(G.shake+0.7,1.2);
-      sfxBump(); popup('撞到行人！-3秒','bad');
+      sfxBump(); popup('撞到行人！-30分','bad');
 
     }
   }
@@ -2919,8 +2919,8 @@ function checkCollisions(dt){
       const dx=Math.abs(e.lx-px), ds=Math.abs(e.s-ps);
       if(dx<1.4&&ds<2.0){
         if(e.dir<0&&player.speed>12){ fatalCrash('撞上逆行电瓶车！'); }
-        else if(e.dir<0){ doCrash('ebike',5,2); popup('撞上逆行电瓶车！-5秒','bad'); }
-        else { doCrash('ebike',3,2); popup('撞上电瓶车！-3秒','bad'); }
+        else if(e.dir<0){ doCrash('ebike',5,2); popup('撞上逆行电瓶车！-50分','bad'); }
+        else { doCrash('ebike',3,2); popup('撞上电瓶车！-30分','bad'); }
         break;
       }
     }
@@ -2932,8 +2932,8 @@ function checkCollisions(dt){
     if(ds<2.5&&dx<2.2){
       cp.hit=true;
       if(player.speed>6){
-        G.timeLeft=Math.max(0.5,G.timeLeft-8); G.score=Math.max(0,G.score-200);
-        popup('闯交警设卡！-8秒','bad'); sfxBump();
+        G.score=Math.max(0,G.score-280);
+        popup('闯交警设卡！-280分','bad'); sfxBump();
       }else{ G.score+=50; popup('配合检查','good'); }
     }
     if(ds>400) cp.hit=false;
@@ -2943,7 +2943,7 @@ function checkCollisions(dt){
     for(const b of barriers){
       const dx=Math.abs(b.x-px), ds=Math.abs(b.s-ps);
       if(dx<1.9&&ds<1.1){
-        doCrash('barrier',4,3); popup('撞上路障！-4秒','bad'); break;
+        doCrash('barrier',4,3); popup('撞上路障！-40分','bad'); break;
       }
     }
   }
@@ -2953,15 +2953,15 @@ function checkCollisions(dt){
     const dx=Math.abs(p.x-px), ds=Math.abs(p.s-ps);
     if(dx<1.7&&ds<1.7){
       p.taken=true; p.m.visible=false;
-      G.timeLeft+=3; G.score+=200;
-      sfxPickup(); popup('能量饮料 +3秒','good');
+      G.score+=230;
+      sfxPickup(); popup('能量饮料 +230分','good');
     }
   }
   // --- 闯红灯 ---
   for(const cz of crossings){
     if(player.prevS<cz&&ps>=cz&&player.speed>5&&G.lastCross!==cz){
       G.lastCross=cz;
-      if(LIGHT.state==='red'){ G.timeLeft=Math.max(0,G.timeLeft-6); popup('闯红灯！-6秒','bad'); sfxHonk(); }
+      if(LIGHT.state==='red'){ G.score=Math.max(0,G.score-60); popup('闯红灯！-60分','bad'); sfxHonk(); }
     }
     if(Math.abs(ps-cz)>60&&G.lastCross===cz) G.lastCross=null;
   }
@@ -2990,9 +2990,9 @@ function checkCollisions(dt){
         }else{
           hideBanner();
         }
-        if(pds>25){ // 错过取餐点：-5 秒，同一家店往前重放
-          G.timeLeft=Math.max(0,G.timeLeft-5);
-          popup('错过取餐点！-5秒','bad');
+        if(pds>25){ // 错过取餐点：-50 分，同一家店往前重放
+          G.score=Math.max(0,G.score-50);
+          popup('错过取餐点！-50分','bad');
           let ns=ps+R(120,200), guard=0;
           while(zoneOf(ns)!=='road'&&guard++<24) ns+=R(30,80);
           G.shop.s=ns; G.shop.dx=roadHalfAt(ns)+SW-1.0;
@@ -3028,7 +3028,7 @@ function checkCollisions(dt){
           hideBanner();
         }
         if(dds>=28){ // 错过门口
-          G.timeLeft=Math.max(0,G.timeLeft-5); popup('错过收货门！-5秒','bad');
+          G.score=Math.max(0,G.score-50); popup('错过收货门！-50分','bad');
           startOrder(G.order+1);
         }
       }
@@ -3184,7 +3184,11 @@ function updatePlayer(dt){
   if(IN.boost) target=27;
   if(IN.brake) target=IN.boost?target:(p.speed<7?0:5); // 低速刹车可完全停稳（取餐 dwell 需要）
   // 取餐/送餐点自动刹停辅助：慢速进区自动停稳，否则 3 秒 dwell 会被怠速前溜打断
-  if(!IN.boost&&G.state==='race'&&!G.serve&&p.speed<8){
+  // 40米内朝目标点按距离限速，越近越慢，避免高速冲过头撞墙
+  if(!IN.boost&&G.state==='race'&&!G.serve){
+    const tz=G.leg==='pickup'?G.shop:dest;
+    const dts=tz.s-p.s;
+    if(dts>0&&dts<40&&Math.abs(p.x-tz.dx)<12){ target=Math.min(target,Math.max(4,dts*0.55)); }
     if(G.leg==='pickup'){ if(Math.abs(p.s-G.shop.s)<12&&Math.abs(p.x-G.shop.dx)<10) target=0; }
     else{ if(Math.abs(p.s-dest.s)<12&&Math.abs(p.x-dest.dx)<10) target=0; }
   }
@@ -3205,7 +3209,10 @@ function updatePlayer(dt){
   const xMin=zone==='alley'?-1.8:-12.4, xMax=zone==='alley'?1.8:12.4; // 马路区可骑上人行道
   p.x=clamp(p.x+p.vx*dt, xMin, xMax);
   const atEdge=(p.x<=xMin+0.01&&p.vx<0)||(p.x>=xMax-0.01&&p.vx>0);
-  if(atEdge&&p.speed>14){ fatalCrash('撞墙了！车散架了'); return; }
+  // 取餐/送达点附近：蹭墙只减速弹回，不直接 game over（送达点贴墙，高速接近易误触）
+  const nearServe=(G.leg==='pickup'&&Math.abs(p.s-G.shop.s)<18)||(G.leg==='deliver'&&Math.abs(p.s-dest.s)<18);
+  if(atEdge&&p.speed>14&&!nearServe){ fatalCrash('撞墙了！车散架了'); return; }
+  if(atEdge&&p.speed>14&&nearServe){ p.vx*=-0.6; p.speed=Math.min(p.speed,8); }
   if(atEdge){
     p.vx*=0.4; p.speed=Math.min(p.speed,13);
     const now=performance.now();
